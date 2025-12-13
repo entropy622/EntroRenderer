@@ -11,12 +11,16 @@
 
 #include <string>
 #include <vector>
-#include <assimp/scene.h> // 依然需要 scene.h 来识别 aiNode 等指针，但不需要 Importer
+
+#include "assimp/material.h"
 
 using namespace std;
 
 unsigned int TextureFromFile(const char *path, const string &directory, bool gamma = false);
-
+struct aiNode;
+struct aiScene;
+struct aiMesh;
+struct aiMaterial;
 class Model
 {
 public:

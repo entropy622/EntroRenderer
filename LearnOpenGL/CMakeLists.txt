@@ -32,13 +32,17 @@ if(NOT glm_POPULATED)
     FetchContent_Populate(glm)
 endif()
 
-# 下载 Assimp
+# ... 下载 Assimp ...
 FetchContent_Declare(
         assimp
         GIT_REPOSITORY https://github.com/assimp/assimp.git
-        GIT_TAG v5.2.5  # 使用一个稳定的版本
+        GIT_TAG v5.2.5
 )
-# 注意：Assimp 编译很慢，我们可以关闭一些不需要的格式来加速
+
+# 【核心修改】开启 DLL 模式 (Shared Libs)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+
+# 保持其他优化
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
@@ -105,6 +109,14 @@ foreach(ONE_SOURCE_FILE ${MAIN_SOURCES})
     # 链接我们刚才创建的 MyCore 库
     # 这样 main_xxx 就能用 MyCore 里的 Mesh 和 Model 类了
     target_link_libraries(${EXE_NAME} PRIVATE MyCore)
+
+    if(WIN32)
+        add_custom_command(TARGET ${EXE_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:assimp>  # 找到 assimp 编译出来的 dll
+                $<TARGET_FILE_DIR:${EXE_NAME}> # 复制到 main.exe 所在的目录
+        )
+    endif()
 
     message(STATUS "已添加可执行文件: ${EXE_NAME}")
 endforeach()

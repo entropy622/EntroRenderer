@@ -7,6 +7,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "assimp/scene.h"
 
 Model::Model(string const &path, bool gamma) : gammaCorrection(gamma)
 {

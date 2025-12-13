@@ -32,6 +32,20 @@ if(NOT glm_POPULATED)
     FetchContent_Populate(glm)
 endif()
 
+# 下载 Assimp
+FetchContent_Declare(
+        assimp
+        GIT_REPOSITORY https://github.com/assimp/assimp.git
+        GIT_TAG v5.2.5  # 使用一个稳定的版本
+)
+# 注意：Assimp 编译很慢，我们可以关闭一些不需要的格式来加速
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(assimp)
+
 # ==========================================
 # 3. 基础路径配置
 # ==========================================
@@ -63,17 +77,34 @@ endif ()
 # 6. 【核心修改】自动扫描 main_*.cpp 并生成可执行文件
 # ==========================================
 # 查找目录下所有以 main_ 开头的 .cpp 文件
-file(GLOB SOURCE_FILES "mains/main*.cpp")
-message(STATUS "扫描到的文件列表: ${SOURCE_FILES}")
-foreach(ONE_SOURCE_FILE ${SOURCE_FILES})
-    # 获取文件名（去掉路径和扩展名），例如 main_triangle.cpp -> main_triangle
+
+# 1. 扫描 src 下的所有实现文件 (Mesh.cpp, Model.cpp)
+file(GLOB IMPL_SOURCES "src/*.cpp")
+
+# 2. 把这些实现文件编译成一个静态库 (就像我们对 GLAD 做的那样)
+# 这样 Mesh.cpp 和 Model.cpp 只会被编译一次，大大加快后续编译速度！
+add_library(MyCore STATIC ${IMPL_SOURCES})
+
+# MyCore 库依赖 Assimp, GLAD, GLFW 等
+# 这里的 PUBLIC 意味着谁链接了 MyCore，谁也能自动找到 Assimp 的头文件
+target_link_libraries(MyCore PUBLIC glad glfw assimp::assimp ${OS_LIBS})
+
+
+# 3. 扫描 mains 下的所有入口文件
+file(GLOB MAIN_SOURCES "mains/main*.cpp")
+
+message(STATUS "扫描到的主程序: ${MAIN_SOURCES}")
+
+foreach(ONE_SOURCE_FILE ${MAIN_SOURCES})
+    # 获取文件名，例如 main_triangle.cpp -> main_triangle
     get_filename_component(EXE_NAME ${ONE_SOURCE_FILE} NAME_WE)
 
-    # 创建可执行文件 (注意：不用再写 glad.c 了，因为下面会链接 glad 库)
+    # 创建可执行文件 (只包含 main_xxx.cpp)
     add_executable(${EXE_NAME} ${ONE_SOURCE_FILE})
 
-    # 链接库：链接 GLFW, GLAD库, 和系统OpenGL库
-    target_link_libraries(${EXE_NAME} PRIVATE glfw glad ${OS_LIBS})
+    # 链接我们刚才创建的 MyCore 库
+    # 这样 main_xxx 就能用 MyCore 里的 Mesh 和 Model 类了
+    target_link_libraries(${EXE_NAME} PRIVATE MyCore)
 
     message(STATUS "已添加可执行文件: ${EXE_NAME}")
 endforeach()

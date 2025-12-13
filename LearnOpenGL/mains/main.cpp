@@ -144,6 +144,7 @@ int main() {
 
     // --- 4. 资源加载 ---
     Shader shader("shaders/shader.vert", "shaders/shader.frag");
+    Shader lightCubeShader("shaders/light_cube.vert", "shaders/light_cube.frag");
     Texture texture1("textures/wall.jpg");
     Texture texture2("textures/awesomeface.jpg");
 
@@ -172,16 +173,15 @@ int main() {
         // --- 矩阵变换 ---
         // 1. Model:
         glm::mat4 model = glm::mat4(1.0f);
-
         shader.setMat4("model", model);
-
         // 2. View:
         glm::mat4 view = camera.GetViewMatrix();
         shader.setMat4("view", view);
-
         // 3. Projection:
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 100.0f);
         shader.setMat4("projection", projection);
+
+        shader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
 
         for(unsigned int i = 0; i < 10; i++)
         {
@@ -197,6 +197,18 @@ int main() {
 
         // --- 绘制 ---
         cubeMesh.Draw();
+
+        glm::vec3 lightPos(1.2f, 1.0f, 2.0f); // 把灯放在右上方
+        lightCubeShader.use();
+        lightCubeShader.setMat4("projection", projection);
+        lightCubeShader.setMat4("view", view);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, lightPos); // 把它移到光源位置
+        model = glm::scale(model, glm::vec3(0.2f)); // 把它缩小一点，像个灯泡
+        lightCubeShader.setMat4("model", model);
+        lightCubeShader.setMat4("model", model);
+        cubeMesh.Draw();
+
 
         glfwSwapBuffers(window);
         glfwPollEvents();

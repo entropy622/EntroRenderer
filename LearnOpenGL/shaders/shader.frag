@@ -2,8 +2,9 @@
 out vec4 FragColor;
 
 struct Material {
-    vec3 diffuse;   // 漫反射颜色 (通常等于物体颜色)
-    vec3 specular;  // 镜面光颜色 (高光的颜色)
+    sampler2D diffuse;
+    sampler2D specular;  // 镜面光颜色 (高光的颜色)
+    sampler2D emission;
     float shininess; // 反光度 (高光点的聚焦程度)
 };
 
@@ -12,6 +13,10 @@ struct Light {
     vec3 ambient;
     vec3 diffuse;
     vec3 specular;
+
+    float constant;
+    float linear;
+    float quadratic;
 };
 
 in vec3 FragPos;
@@ -29,9 +34,11 @@ uniform sampler2D texture2;
 void main()
 {
     // 纹理映射
-    vec4 textureColor = texture(texture1, TexCoord);
-    vec4 textureColor2 = texture(texture2, TexCoord);
-    vec3 baseColor = mix(textureColor, textureColor2, 0.8).rgb;
+    vec3 baseColor = texture(material.diffuse, TexCoord).rgb;
+
+    float distance = length(light.position - FragPos);
+    float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+
     // 1. 环境光
     vec3 ambient = light.ambient * baseColor;
 
@@ -39,14 +46,23 @@ void main()
     vec3 norm = normalize(Normal);
     vec3 lightDir = normalize(light.position - FragPos);
     float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = light.diffuse * (diff * material.diffuse);
+    vec3 diffuse = light.diffuse * (diff * baseColor);
 
     // 3. 镜面光
-    vec3 viewDir = normalize(viewPos - FragPos);
-    vec3 reflectDir = reflect(-lightDir, norm);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
-    vec3 specular = light.specular * (spec * material.specular);
+    vec3 specular = vec3(0.0f);
+    if (diff > 0.0) {
+        vec3 viewDir = normalize(viewPos - FragPos);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
+        specular = light.specular * (spec * texture2D(material.specular, TexCoord).rgb);
+    }
 
-    vec3 result = ambient + diffuse + specular;
+//    vec3 emission = texture(material.emission, TexCoord).rgb;
+    vec3 emission = vec3(0.0f);
+//    if (texture2D(material.specular, TexCoord).r < 0.1){
+//        emission = texture2D(material.emission, TexCoord).rgb;
+//    }
+
+    vec3 result = (ambient + diffuse + specular) * attenuation + emission;
     FragColor = vec4(result, 1.0);
 }

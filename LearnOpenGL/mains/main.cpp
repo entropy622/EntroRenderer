@@ -102,12 +102,15 @@ int main() {
     // --- 4. 资源加载 ---
     Shader shader("shaders/shader.vert", "shaders/shader.frag");
     Shader lightCubeShader("shaders/light_cube.vert", "shaders/light_cube.frag");
-    Texture texture1("textures/wall.jpg");
-    Texture texture2("textures/awesomeface.jpg");
+    Texture texture1("textures/container2.png");
+    // Texture texture2("textures/awesomeface.jpg");
+    Texture texture2("textures/container2_specular.png");
+    Texture emissionMap("textures/matrix.jpg");
 
     shader.use();
-    shader.setInt("texture1", 0);
-    shader.setInt("texture2", 1);
+    shader.setInt("material.diffuse", 0);
+    shader.setInt("material.specular", 1);
+    shader.setInt("material.emission", 2);
 
     // --- 5. 渲染循环 ---
     while (!glfwWindowShouldClose(window)) {
@@ -126,6 +129,7 @@ int main() {
         shader.use();
         texture1.bind(0);
         texture2.bind(1);
+        emissionMap.bind(2);
 
         // --- 矩阵变换 ---
         // 1. Model:
@@ -140,13 +144,13 @@ int main() {
 
         // --- 设置光源属性 (通常是白光) ---
         shader.setVec3("light.position", lightPos);
-        shader.setVec3("light.ambient",  0.2f, 0.2f, 0.2f); // 稍微暗一点的环境光
-        shader.setVec3("light.diffuse",  0.5f, 0.5f, 0.5f); // 正常的漫反射光
+        shader.setVec3("light.ambient",  0.1f, 0.1f, 0.1f); // 稍微暗一点的环境光
+        shader.setVec3("light.diffuse",  1.0f, 1.0f, 1.0f); // 正常的漫反射光
         shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f); // 最亮的镜面光
-
-        // --- 设置物体材质 (翡翠) ---
-        // 这些数值可以在网上的 "Ogre3D Material Table" 查到
-        shader.setVec3("material.diffuse",  glm::vec3(1.0f));
+        shader.setFloat("light.constant",  1.0f);
+        shader.setFloat("light.linear",    0.09f);
+        shader.setFloat("light.quadratic", 0.032f);
+        
         shader.setVec3("material.specular", glm::vec3(0.6f)); // 翡翠的高光也是绿的
         shader.setFloat("material.shininess", 0.6f * 128.0f);
 

@@ -13,6 +13,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "cubeData.h"
 
 using namespace std;
 
@@ -63,7 +64,7 @@ GLFWwindow* initWindow() {
     return window;
 }
 
-
+glm::vec3 lightPos(1.2f, 1.0f, 2.0f); // 把灯放在右上方
 int main() {
     GLFWwindow* window = initWindow();
     if (!window) return -1;
@@ -81,50 +82,6 @@ int main() {
 
     // --- 2. 准备数据 (使用结构体初始化，非常直观) ---
     // 这里的 {} 会自动对应 Vertex 结构体里的 {Position, TexCoords}
-    vector<Vertex> vertices = {
-        // 后方
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 0.0f}},
-        // 前方
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f}},
-        // 左方
-        {{-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f}},
-        // 右方
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f}},
-        // 下方
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {1.0f, 1.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {0.0f, 0.0f}},
-        {{-0.5f, -0.5f, -0.5f}, {0.0f, 1.0f}},
-        // 上方
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {1.0f, 1.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 0.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.0f, 0.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {0.0f, 1.0f}}
-    };
 
     glm::vec3 cubePositions[] = {
         glm::vec3( 0.0f,  0.0f,  0.0f),
@@ -140,7 +97,7 @@ int main() {
       };
 
     // --- 3. 创建网格对象 (自动配置 VAO/VBO) ---
-    Mesh cubeMesh(vertices);
+    Mesh cubeMesh(CubeData::GetCubeVertices());
 
     // --- 4. 资源加载 ---
     Shader shader("shaders/shader.vert", "shaders/shader.frag");
@@ -181,7 +138,17 @@ int main() {
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / SCR_HEIGHT, 0.1f, 100.0f);
         shader.setMat4("projection", projection);
 
-        shader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f));
+        // --- 设置光源属性 (通常是白光) ---
+        shader.setVec3("light.position", lightPos);
+        shader.setVec3("light.ambient",  0.2f, 0.2f, 0.2f); // 稍微暗一点的环境光
+        shader.setVec3("light.diffuse",  0.5f, 0.5f, 0.5f); // 正常的漫反射光
+        shader.setVec3("light.specular", 1.0f, 1.0f, 1.0f); // 最亮的镜面光
+
+        // --- 设置物体材质 (翡翠) ---
+        // 这些数值可以在网上的 "Ogre3D Material Table" 查到
+        shader.setVec3("material.diffuse",  glm::vec3(1.0f));
+        shader.setVec3("material.specular", glm::vec3(0.6f)); // 翡翠的高光也是绿的
+        shader.setFloat("material.shininess", 0.6f * 128.0f);
 
         for(unsigned int i = 0; i < 10; i++)
         {
@@ -198,7 +165,6 @@ int main() {
         // --- 绘制 ---
         cubeMesh.Draw();
 
-        glm::vec3 lightPos(1.2f, 1.0f, 2.0f); // 把灯放在右上方
         lightCubeShader.use();
         lightCubeShader.setMat4("projection", projection);
         lightCubeShader.setMat4("view", view);

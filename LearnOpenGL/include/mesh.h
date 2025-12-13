@@ -11,6 +11,7 @@
 // 总大小自动为 5 * 4 = 20 字节
 struct Vertex {
     glm::vec3 Position;
+    glm::vec3 Normal;
     glm::vec2 TexCoords;
 };
 
@@ -68,16 +69,17 @@ private:
         }
 
         // 3. 设置属性指针 (通用化)
-        // 属性 0: Position
+        // 属性 0: Pos (Location = 0)
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
 
-        // 属性 1: TexCoords
-        // offsetof 会自动计算 TexCoords 距离结构体开头隔了多少字节
+        // 属性 1: Normal (Location = 1)
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
 
-        glBindVertexArray(0);
+        // 属性 2: TexCoords (Location = 2)
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
     }
 };
 

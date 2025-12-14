@@ -79,20 +79,15 @@ int main() {
     // 隐藏光标并捕捉它 (FPS 模式)
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
-    // --- 1. 开启深度测试 (解决穿模的关键) ---
-    glEnable(GL_DEPTH_TEST);
-
-
     // --- 4. 资源加载 ---
-    Shader shader("shaders/shader.vert", "shaders/shader.frag");
+    Shader shader("shaders/shader.vert", "shaders/toon_shader.frag");
+    Shader outlineShader("shaders/outline.vert", "shaders/outline.frag");
     Shader lightCubeShader("shaders/light_cube.vert", "shaders/light_cube.frag");
 
     // 6. 【核心步骤】加载模型
-    // 确保 stbi_set_flip_vertically_on_load 在 Model 类内部处理，或者在这里设置
-    // 我们的 Model 类构造函数里已经处理了翻转
-    // 请确保路径正确！！
-    Model ourModel("objects/backpack/backpack.obj");
+    Model ourModel("objects/TDA/TDA.pmx");
 
+    glEnable(GL_DEPTH_TEST);
     // 7. 渲染循环
     while (!glfwWindowShouldClose(window))
     {
@@ -106,38 +101,50 @@ int main() {
 
         // 清屏
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // 激活 Shader
-        shader.use();
-
-        // 设置光源属性 (简单的点光源，跟摄像机位置稍微错开一点)
-        shader.setVec3("pointLight.position", 2.0f, 2.0f, 2.0f);
-        shader.setVec3("pointLight.ambient", 0.2f, 0.2f, 0.2f);
-        shader.setVec3("pointLight.diffuse", 0.5f, 0.5f, 0.5f);
-        shader.setVec3("pointLight.specular", 1.0f, 1.0f, 1.0f);
-        shader.setFloat("pointLight.constant", 1.0f);
-        shader.setFloat("pointLight.linear", 0.09f);
-        shader.setFloat("pointLight.quadratic", 0.032f);
-
-        // 设置材质反光度
-        shader.setFloat("material.shininess", 32.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         // 设置 View/Projection 矩阵
         glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = camera.GetViewMatrix();
+        // transform
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // 放在原点
+        model = glm::scale(model, glm::vec3(0.1));	// 缩放 (如果模型太大或太小，调这里)
+        shader.setMat4("model", model);
+
+        // ==============================================
+        // 第 1 遍 (Pass 1): 渲染描边
+        // ==============================================
+        outlineShader.use();
+
+        outlineShader.setMat4("view", view);
+        outlineShader.setMat4("projection", projection);
+        outlineShader.setMat4("model", model);
+        outlineShader.setFloat("outlineWidth", 0.2f); // 稍微调一点点宽度
+        outlineShader.setVec3("color",0.0f, 0.0f, 0.0f);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_FRONT);
+        ourModel.Draw(outlineShader);
+
+
+        // ==============================================
+        // 第 2 遍 (Pass 2): 正常渲染 Toon 模型
+        // ==============================================
+        shader.use();
+        glDisable(GL_CULL_FACE);
+        shader.setVec3("pointLight.position", 5.0f, 5.0f, 5.0f);
+        // --- 调整光照颜色 ---
+        // 环境光不要太强，漫反射要亮
+        shader.setVec3("pointLight.ambient", 0.3f, 0.3f, 0.3f);
+        shader.setVec3("pointLight.diffuse", 0.8f, 0.8f, 0.8f); // 主光要亮
+        shader.setVec3("pointLight.specular", 1.0f, 1.0f, 1.0f); // 高光纯白
+        // MMD 的高光是很锐利的，把这个值设置得很高（比如 128, 256 甚至更高）
+        shader.setFloat("material.shininess", 256.0f);
         shader.setMat4("projection", projection);
         shader.setMat4("view", view);
         shader.setVec3("viewPos", camera.Position);
-
-        // 渲染模型
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // 放在原点
-        model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));	// 缩放 (如果模型太大或太小，调这里)
-        shader.setMat4("model", model);
-
-        // 【关键】一行代码绘制整个复杂模型
         ourModel.Draw(shader);
+
 
         glfwSwapBuffers(window);
         glfwPollEvents();

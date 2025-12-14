@@ -39,6 +39,17 @@ void Model::processNode(aiNode *node, const aiScene *scene)
     for(unsigned int i = 0; i < node->mNumMeshes; i++)
     {
         aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+
+        // 跳过hair shadow
+        std::string meshName = mesh->mName.C_Str();
+        std::transform(meshName.begin(), meshName.end(), meshName.begin(),
+    [](unsigned char c){ return std::tolower(c); });
+        // 只要名字里包含 "faceShadow" 或 "顔影"，就认为是目标网格
+        if (meshName.find("hairshadow") != std::string::npos || meshName.find("顔影") != std::string::npos)
+        {
+            std::cout << "已跳过特殊网格: " << meshName << std::endl;
+            continue; // 直接进入下一次循环，不处理这个网格
+        }
         meshes.push_back(processMesh(mesh, scene));
     }
     for(unsigned int i = 0; i < node->mNumChildren; i++)

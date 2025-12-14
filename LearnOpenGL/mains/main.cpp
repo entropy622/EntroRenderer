@@ -96,9 +96,12 @@ int main() {
     Model sphereModel("objects/sphere.obj");
     Model floorModel("objects/floor.obj");
     RenderObject tianyi(&ourModel);
-    RenderObject cube(&cubeModel);
+    RenderObject light(&cubeModel);
     RenderObject sphere(&sphereModel);
     RenderObject floor(&floorModel);
+
+    tianyi.scale = glm::vec3(0.1f);
+    light.position = lightPos;
 
     UBO matricesUBO(2 * sizeof(glm::mat4), 0);
     UBO lightUBO(sizeof(PointLightData), 1);
@@ -191,19 +194,16 @@ int main() {
         glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
 
         outlineShader.use();
-        outlineShader.setMat4("model", model);
         outlineShader.setFloat("outlineWidth", 0.2f); // 稍微调一点点宽度
         outlineShader.setVec3("color",glm::vec3(0.3f));
         glEnable(GL_CULL_FACE);
         glCullFace(GL_FRONT);
-        ourModel.Draw(outlineShader);
-
+        tianyi.Draw(outlineShader);
 
         // ==============================================
         // 第 2 遍 (Pass 2): 正常渲染 Toon 模型
         // ==============================================
         shader.use();
-        shader.setMat4("model", model);
         glDisable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         shader.setFloat("material.shininess", 256.0f);
@@ -211,7 +211,7 @@ int main() {
         // 3. 绑定阴影贴图
         glActiveTexture(GL_TEXTURE10);
         glBindTexture(GL_TEXTURE_2D, depthMap);
-        ourModel.Draw(shader);
+        tianyi.Draw(shader);
 
         // ------------------------------------------------
         // 绘制反射箱子
@@ -229,8 +229,8 @@ int main() {
         // 天空盒  光源  地板
         // ==============================================
         skybox.Draw(skyboxShader, view, projection);
-        cubeModel.DrawAt(lightPos,lightCubeShader);
-        floorModel.DrawAt(glm::vec3(0.0f, 0.0f, 0.0f),shader);
+        light.Draw(lightCubeShader);
+        floor.Draw(shader);
 
         // ==============================================
         // 后处理

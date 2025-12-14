@@ -41,8 +41,9 @@ uniform vec3 viewPos;
 uniform Material material;
 layout(binding = 10) uniform sampler2D shadowMap;
 
-float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
+float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
 {
+    vec3 lightDir = normalize(pointLight.position - FragPos);
     // 1. 执行透视除法 (虽然正交投影下 w 是 1，但这步是标准流程)
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
@@ -100,7 +101,8 @@ void main()
 
     // 【核心一步】将连续的光照值“切”成离散的色阶
     float toonIntensity;
-    float shadow = ShadowCalculation(FragPosLightSpace, norm, pointLight.position);
+
+    float shadow = ShadowCalculation(FragPosLightSpace, norm);
     if (diffuseFactor < 0.3 || shadow > 0.5) {
         toonIntensity = 0.4;
     } else {

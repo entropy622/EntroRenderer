@@ -15,6 +15,7 @@
 #include "skybox.h"
 #include "UBO.h"
 #include "pointLightData.h"
+#include "renderObject.h"
 
 using namespace std;
 
@@ -50,7 +51,7 @@ glm::vec3 pointLightPositions[] = {
     glm::vec3(-4.0f,  2.0f, -12.0f),
     glm::vec3( 0.0f,  0.0f, -3.0f)
 };
-
+glm::vec3 lightPos(-2.0f, 1.0f, -1.0f);
 
 int main() {
     GLFWwindow* window = initWindow();
@@ -91,18 +92,16 @@ int main() {
 
     // 6. 【核心步骤】加载模型
     Model ourModel("objects/TDA/TDA.pmx");
+    Model cubeModel("objects/cube.obj");
+    Model sphereModel("objects/sphere.obj");
+    Model floorModel("objects/floor.obj");
+    RenderObject tianyi(&ourModel);
+    RenderObject cube(&cubeModel);
+    RenderObject sphere(&sphereModel);
+    RenderObject floor(&floorModel);
 
     UBO matricesUBO(2 * sizeof(glm::mat4), 0);
     UBO lightUBO(sizeof(PointLightData), 1);
-    glm::vec3 lightPos(-2.0f, 1.0f, -1.0f);
-    PointLightData lightData = {
-        glm::vec4(lightPos, 0.0f), // position
-        glm::vec4(0.3f, 0.3f, 0.3f, 0.0f), // ambient
-        glm::vec4(0.8f, 0.8f, 0.8f, 0.0f), // diffuse
-        glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), // specular
-        1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
-    };
-    lightUBO.SetData(0, sizeof(PointLightData), &lightData);
 
     // 配置帧缓冲 (Framebuffer)
     unsigned int framebuffer;
@@ -141,6 +140,14 @@ int main() {
         // 配置UBO
         matricesUBO.SetMat4(0, projection);
         matricesUBO.SetMat4(sizeof(glm::mat4), view);
+        PointLightData lightData = {
+            glm::vec4(lightPos, 0.0f), // position
+            glm::vec4(0.3f, 0.3f, 0.3f, 0.0f), // ambient
+            glm::vec4(0.8f, 0.8f, 0.8f, 0.0f), // diffuse
+            glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), // specular
+            1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
+        };
+        lightUBO.SetData(0, sizeof(PointLightData), &lightData);
 
         // 清屏
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
@@ -183,9 +190,7 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
 
-
         outlineShader.use();
-
         outlineShader.setMat4("model", model);
         outlineShader.setFloat("outlineWidth", 0.2f); // 稍微调一点点宽度
         outlineShader.setVec3("color",glm::vec3(0.3f));
@@ -211,19 +216,21 @@ int main() {
         // ------------------------------------------------
         // 绘制反射箱子
         // ------------------------------------------------
-        reflectionShader.use();
-        glm::mat4 modelCube = glm::mat4(1.0f);
-        modelCube = glm::translate(modelCube, glm::vec3(-2.0f, 1.0f, 0.0f)); // 放在角色左手边
-        modelCube = glm::scale(modelCube, glm::vec3(0.5f));
-
-        reflectionShader.setMat4("model", modelCube);
-        reflectionShader.setVec3("cameraPos", camera.Position);
-        ourModel.Draw(reflectionShader);
+        // reflectionShader.use();
+        // glm::mat4 modelCube = glm::mat4(1.0f);
+        // modelCube = glm::translate(modelCube, glm::vec3(-2.0f, 1.0f, 0.0f)); // 放在角色左手边
+        // modelCube = glm::scale(modelCube, glm::vec3(0.5f));
+        //
+        // reflectionShader.setMat4("model", modelCube);
+        // reflectionShader.setVec3("cameraPos", camera.Position);
+        // ourModel.Draw(reflectionShader);
 
         // ==============================================
-        // 天空盒
+        // 天空盒  光源  地板
         // ==============================================
         skybox.Draw(skyboxShader, view, projection);
+        cubeModel.DrawAt(lightPos,lightCubeShader);
+        floorModel.DrawAt(glm::vec3(0.0f, 0.0f, 0.0f),shader);
 
         // ==============================================
         // 后处理
@@ -259,6 +266,30 @@ void processInput(GLFWwindow *window)
         camera.ProcessKeyboard(LEFT, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         camera.ProcessKeyboard(RIGHT, deltaTime);
+
+
+    // ==============================================
+    // 光源控制逻辑
+    // ==============================================
+    float lightSpeed = 5.0f * deltaTime; // 光源移动速度
+
+    // X轴移动 (左/右)
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        lightPos.x -= lightSpeed;
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        lightPos.x += lightSpeed;
+
+    // Z轴移动 (上/下)
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        lightPos.z -= lightSpeed;
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        lightPos.z += lightSpeed;
+
+    // Y轴移动 (垂直升降) - 使用 Right Shift 和 Right Control
+    if (glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
+        lightPos.y += lightSpeed;
+    if (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)
+        lightPos.y -= lightSpeed;
 }
 
 // --- 鼠标移动回调 ---

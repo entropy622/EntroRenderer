@@ -19,6 +19,14 @@ void Model::Draw(Shader &shader)
     for(unsigned int i = 0; i < meshes.size(); i++)
         meshes[i].Draw(shader);
 }
+void Model::DrawAt(glm::vec3 pos, Shader &shader) {
+    glm:: mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, pos);
+    shader.use();
+    shader.setMat4("model", model);
+    Draw(shader);
+}
+
 
 void Model::loadModel(string const &path)
 {

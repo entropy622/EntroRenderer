@@ -31,6 +31,7 @@ public:
 
     Model(string const &path, bool gamma = false);
     void Draw(Shader &shader);
+    void DrawAt(glm::vec3 pos, Shader &shader);
 
 private:
     void loadModel(string const &path);

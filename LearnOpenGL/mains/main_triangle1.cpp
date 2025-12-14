@@ -72,7 +72,7 @@ int main() {
         0.9f, -0.5f, 0.0f,  // right
         0.45f, 0.5f, 0.0f   // top
     };
-    const char *vertexShaderSource = "#version 330 core\n"
+    const char *vertexShaderSource = "#version 420 core\n"
     "layout (location = 0) in vec3 aPos;\n"
     "void main()\n"
     "{\n"
@@ -80,7 +80,7 @@ int main() {
     "}\0";
 
 
-    const char *fragmentShaderSource = "#version 330 core\n"
+    const char *fragmentShaderSource = "#version 420 core\n"
         "out vec4 FragColor;\n"
         "void main()\n"
         "{\n"

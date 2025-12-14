@@ -13,16 +13,19 @@
 #include "model.h"
 #include "screenQuad.h"
 #include "skybox.h"
+#include "UBO.h"
+#include "pointLightData.h"
 
 using namespace std;
 
-const int SCR_WIDTH = 800;
-const int SCR_HEIGHT = 600;
+const int SCR_WIDTH = 1600;
+const int SCR_HEIGHT = 1200;
 
 // 摄像机
 Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
+const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // 阴影贴图分辨率，越高锯齿越少
 bool firstMouse = true; // 用于解决第一次进入窗口时的跳变问题
 
 // 时间控制
@@ -39,6 +42,7 @@ void configFrameBuffer(unsigned int &framebuffer, unsigned int &textureColorBuff
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
+void initShadowMap(unsigned int& depthMapFBO, unsigned int& depthMap);
 
 glm::vec3 pointLightPositions[] = {
     glm::vec3( 0.7f,  0.2f,  2.0f),
@@ -66,6 +70,7 @@ int main() {
     Shader screenShader("shaders/screen.vert", "shaders/screen.frag");
     Shader lightCubeShader("shaders/light_cube.vert", "shaders/light_cube.frag");
     Shader skyboxShader("shaders/skybox.vert", "shaders/skybox.frag");
+    Shader simpleDepthShader("shaders/simpleDepthShader.vert", "shaders/simpleDepthShader.frag");
     //天空盒
     vector<string> faces = {
         "textures/skybox/right.jpg",
@@ -75,6 +80,9 @@ int main() {
         "textures/skybox/front.jpg",
         "textures/skybox/back.jpg"
     };
+    Shader reflectionShader("shaders/reflection.vert", "shaders/reflection.frag");
+    reflectionShader.use();
+    reflectionShader.setInt("skybox", 0); // 天空盒通常绑在 0 号纹理位
     // 这一步会自动加载纹理并配置 VAO
     Skybox skybox(faces);
     ScreenQuad screenQuad = ScreenQuad();// 设置 Shader 的 uniform
@@ -84,10 +92,25 @@ int main() {
     // 6. 【核心步骤】加载模型
     Model ourModel("objects/TDA/TDA.pmx");
 
+    UBO matricesUBO(2 * sizeof(glm::mat4), 0);
+    UBO lightUBO(sizeof(PointLightData), 1);
+    glm::vec3 lightPos(-2.0f, 1.0f, -1.0f);
+    PointLightData lightData = {
+        glm::vec4(lightPos, 0.0f), // position
+        glm::vec4(0.3f, 0.3f, 0.3f, 0.0f), // ambient
+        glm::vec4(0.8f, 0.8f, 0.8f, 0.0f), // diffuse
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), // specular
+        1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
+    };
+    lightUBO.SetData(0, sizeof(PointLightData), &lightData);
+
     // 配置帧缓冲 (Framebuffer)
     unsigned int framebuffer;
     unsigned int textureColorBuffer;
+    unsigned int depthMapFBO;
+    unsigned int depthMap;
     configFrameBuffer(framebuffer, textureColorBuffer);
+    initShadowMap(depthMapFBO, depthMap);
 
     // 开启混合
     glEnable(GL_BLEND);
@@ -115,6 +138,42 @@ int main() {
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // 放在原点
         model = glm::scale(model, glm::vec3(0.1));	// 缩放 (如果模型太大或太小，调这里)
 
+        // 配置UBO
+        matricesUBO.SetMat4(0, projection);
+        matricesUBO.SetMat4(sizeof(glm::mat4), view);
+
+        // 清屏
+        glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+        // ====================================================
+        // 阴影帧
+        // ====================================================
+        // 2. 正交投影 (覆盖场景范围)
+        float near_plane = 1.0f, far_plane = 5.5f;
+        // 这里的数值决定了阴影覆盖的范围，太小会导致远处没阴影，太大导致精度低
+        glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+        // 3. View 矩阵 (从光的位置看向原点)
+        glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+        // 4. 合成光照空间矩阵
+        glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+        // 步骤 1: 渲染阴影贴图 (Shadow Map Pass)
+        // 1. 改变视口大小 (对应阴影贴图分辨率)
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT); // 只清深度
+
+        // 2. 使用深度 Shader
+        simpleDepthShader.use();
+        simpleDepthShader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+        simpleDepthShader.setMat4("model", model);
+
+        // 【重要】MMD 模型通常有很多单面网格。为了防止背面产生错误阴影（Peter Panning），
+        // 渲染阴影贴图时，我们通常剔除正面 (只画背面)，或者不剔除。
+        // 对于 Toon Shading，先试试不剔除
+        glDisable(GL_CULL_FACE);
+        ourModel.Draw(simpleDepthShader);
+
         // ==============================================
         // 第 1 遍 (Pass 1): 渲染描边
         // ==============================================
@@ -122,14 +181,14 @@ int main() {
         // 清屏
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
+
 
         outlineShader.use();
 
-        outlineShader.setMat4("view", view);
-        outlineShader.setMat4("projection", projection);
         outlineShader.setMat4("model", model);
         outlineShader.setFloat("outlineWidth", 0.2f); // 稍微调一点点宽度
-        outlineShader.setVec3("color",0.0f, 0.0f, 0.0f);
+        outlineShader.setVec3("color",glm::vec3(0.3f));
         glEnable(GL_CULL_FACE);
         glCullFace(GL_FRONT);
         ourModel.Draw(outlineShader);
@@ -139,21 +198,27 @@ int main() {
         // 第 2 遍 (Pass 2): 正常渲染 Toon 模型
         // ==============================================
         shader.use();
+        shader.setMat4("model", model);
         glDisable(GL_CULL_FACE);
         glCullFace(GL_BACK);
-        shader.setVec3("pointLight.position", 5.0f, 5.0f, 5.0f);
-        // --- 调整光照颜色 ---
-        // 环境光不要太强，漫反射要亮
-        shader.setVec3("pointLight.ambient", 0.3f, 0.3f, 0.3f);
-        shader.setVec3("pointLight.diffuse", 0.8f, 0.8f, 0.8f); // 主光要亮
-        shader.setVec3("pointLight.specular", 1.0f, 1.0f, 1.0f); // 高光纯白
-        // MMD 的高光是很锐利的，把这个值设置得很高（比如 128, 256 甚至更高）
         shader.setFloat("material.shininess", 256.0f);
-        shader.setMat4("projection", projection);
-        shader.setMat4("view", view);
-        shader.setMat4("model", model);
-        shader.setVec3("viewPos", camera.Position);
+        shader.setMat4("lightSpaceMatrix", lightSpaceMatrix);
+        // 3. 绑定阴影贴图
+        glActiveTexture(GL_TEXTURE10);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
         ourModel.Draw(shader);
+
+        // ------------------------------------------------
+        // 绘制反射箱子
+        // ------------------------------------------------
+        reflectionShader.use();
+        glm::mat4 modelCube = glm::mat4(1.0f);
+        modelCube = glm::translate(modelCube, glm::vec3(-2.0f, 1.0f, 0.0f)); // 放在角色左手边
+        modelCube = glm::scale(modelCube, glm::vec3(0.5f));
+
+        reflectionShader.setMat4("model", modelCube);
+        reflectionShader.setVec3("cameraPos", camera.Position);
+        ourModel.Draw(reflectionShader);
 
         // ==============================================
         // 天空盒
@@ -168,6 +233,7 @@ int main() {
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         screenShader.use();
+        // glBindTexture(GL_TEXTURE_2D, depthMap);
         glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
         screenQuad.Draw();
 
@@ -225,8 +291,8 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 
 GLFWwindow* initWindow() {
     glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 5);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -244,6 +310,7 @@ GLFWwindow* initWindow() {
         cout << "Failed to initialize GLAD" << endl;
         return nullptr;
     }
+    cout << "OpenGL Version: " << glGetString(GL_VERSION) << endl;
     return window;
 }
 
@@ -276,3 +343,34 @@ void configFrameBuffer(unsigned int &framebuffer, unsigned int &textureColorBuff
     // 解绑，切回默认帧缓冲 (避免意外渲染到 FBO)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 };
+
+void initShadowMap(unsigned int& depthMapFBO, unsigned int& depthMap){
+    // 1. 创建 FBO
+    glGenFramebuffers(1, &depthMapFBO);
+
+    // 2. 创建深度纹理
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    // 注意：这里格式是 GL_DEPTH_COMPONENT
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+
+    // 设置过滤参数
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // 设置环绕参数：超出范围的地方不做阴影 (设为白色，深度 1.0)
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    // 3. 把纹理附加到 FBO
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+
+    // 显式告诉 OpenGL：我们不需要任何颜色数据！
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}

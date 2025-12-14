@@ -31,7 +31,10 @@ void main()
 
     // 获取物体本来的纹理颜色
     vec3 objectColor = texture(material.texture_diffuse1, TexCoords).rgb;
-
+    // 透明度测试
+    // 如果这个像素太透明了（Alpha < 0.1），直接扔掉，不要写入颜色缓冲，也不要写入深度缓冲
+    if(texture(material.texture_diffuse1, TexCoords).a < 0.1)
+        discard;
     // ========================================================
     // 卡通着色核心逻辑 (Toon Shading Core)
     // ========================================================

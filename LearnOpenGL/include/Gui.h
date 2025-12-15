@@ -16,6 +16,12 @@ public:
         ImGuiIO& io = ImGui::GetIO(); (void)io;
         ImGui::StyleColorsDark();
 
+        ImFontConfig config;
+        config.SizePixels = 24.0f;
+        io.Fonts->AddFontDefault(&config);
+        // 同时缩放控件的样式 (按钮大小、间距等)
+        ImGui::GetStyle().ScaleAllSizes(2.0f); // 2.0f 代表放大两倍
+
         // 设置后端
         ImGui_ImplGlfw_InitForOpenGL(window, true);
         ImGui_ImplOpenGL3_Init("#version 420");

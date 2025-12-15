@@ -69,8 +69,6 @@ int main() {
     GLFWwindow* window = initWindow();
 
     if (!window) return -1;
-    Gui gui = Gui(window);
-
     // 注册回调函数
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback); // 注册鼠标移动
@@ -78,8 +76,9 @@ int main() {
 
     // 隐藏光标并捕捉它 (FPS 模式)
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    Gui gui = Gui(window);
 
-    // --- 4. 资源加载 ---
+    // ---  资源加载 ---
     Texture wallTex = Texture("textures/wall.jpg");
     Texture brickWallTex = Texture("textures/brickwall.jpg");
     Texture brickWallNormalTex = Texture("textures/brickwall_normal.jpg");
@@ -249,7 +248,7 @@ int main() {
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         screenShader.use();
-        screenShader.setFloat("exposure", 1.0f);
+        screenShader.setFloat("exposure", exposure);
         // glBindTexture(GL_TEXTURE_2D, depthMap);
         glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
         screenQuad.Draw();

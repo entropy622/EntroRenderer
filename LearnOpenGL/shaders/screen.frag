@@ -10,23 +10,15 @@ const float offset = 1.0 / 300.0;  // 步长：越小越精细，越大越夸张
 
 
 void main(){
+    const float gamma = 2.2;
     vec3 hdrColor = texture(screenTexture, TexCoords).rgb;
 
-    // 2. 色调映射 (Tone Mapping)
-    // 方法 A: Reinhard 色调映射 (最简单，均匀压暗)
-    // vec3 mapped = hdrColor / (hdrColor + vec3(1.0));
-
-    // 方法 B: 曝光色调映射 (Exposure Tone Mapping) - 推荐！
-    // 允许我们在亮处和暗处之间做调整，类似相机的曝光
-    // exposure 默认设为 1.0，越大画面越亮，越小画面越暗
+    // 曝光色调映射
     vec3 mapped = vec3(1.0) - exp(-hdrColor * exposure);
+    // Gamma校正
+    mapped = pow(mapped, vec3(1.0 / gamma));
 
-    // 3. 伽马校正 (Gamma Correction)
-    // 这一步也是必须的，之前可能已经在 C++ 开启了 GL_FRAMEBUFFER_SRGB，
-    // 但既然我们自己在做后处理，最好手动控制 Gamma
-    mapped = pow(mapped, vec3(1.0 / 2.2));
-
-    FragColor = vec4(mapped, 1.0);
+    FragColor = vec4(hdrColor, 1.0);
 }
 //void main()
 //{

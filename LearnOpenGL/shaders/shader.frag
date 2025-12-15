@@ -41,6 +41,7 @@ in vec4 FragPosLightSpace;
 
 uniform vec3 viewPos;
 uniform Material material;
+uniform vec2 uvScale;
 
 layout(binding = 10) uniform sampler2D shadowMap;
 

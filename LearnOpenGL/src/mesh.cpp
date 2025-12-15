@@ -17,6 +17,8 @@ void Mesh::Draw(Shader &shader)
     unsigned int normalNr   = 1;
     unsigned int heightNr   = 1;
 
+    bool useNormal = false;
+
     for(unsigned int i = 0; i < textures.size(); i++)
     {
         glActiveTexture(GL_TEXTURE0 + i); 
@@ -27,12 +29,17 @@ void Mesh::Draw(Shader &shader)
             number = std::to_string(diffuseNr++);
         else if(name == "texture_specular")
             number = std::to_string(specularNr++); 
-        else if(name == "texture_normal")
-            number = std::to_string(normalNr++); 
+        else if(name == "texture_normal") {
+            number = std::to_string(normalNr++);
+            useNormal = true;
+        }
         else if(name == "texture_height")
             number = std::to_string(heightNr++); 
 
         shader.setInt(("material." + name + number).c_str(), i);
+        if (useNormal) {
+            shader.setBool("useNormal", true);
+        }
         glBindTexture(GL_TEXTURE_2D, textures[i].id);
     }
 
@@ -61,6 +68,13 @@ void Mesh::setupMesh()
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Normal));
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, TexCoords));
+
+    // 3. 切线 (Tangent)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Tangent));
+    // 4. 副切线 (Bitangent)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, Bitangent));
 
     glBindVertexArray(0);
 }

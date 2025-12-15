@@ -5,6 +5,7 @@ out vec4 FragColor;
 struct Material {
     sampler2D texture_diffuse1;  // 模型本身的颜色贴图
     sampler2D texture_specular1; // MMD模型的高光贴图(SPA/SPH)通常比较特殊，这里可能暂时用不上最好的效果，先保留
+    sampler2D texture_normal1;
     float shininess;             // 高光反光度
 };
 
@@ -36,9 +37,12 @@ in vec3 FragPos;
 in vec3 Normal;
 in vec2 TexCoords;
 in vec4 FragPosLightSpace;
+in mat3 TBN;
 
 uniform vec3 viewPos;
 uniform Material material;
+uniform vec2 uvScale;
+uniform bool useNormalMap;
 layout(binding = 10) uniform sampler2D shadowMap;
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
@@ -59,7 +63,7 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
 
     // 5. 【阴影偏移 (Shadow Bias)】解决 "阴影痤疮" (Shadow Acne)
     // 根据表面法线和光线的夹角动态调整偏移量
-    float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.0005);
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
 
     // 6. PCF (百分比渐进过滤) - 让阴影边缘柔和一点
     // 采样周围 3x3 的像素并取平均值
@@ -81,12 +85,25 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
 
 void main()
 {
-    vec3 norm = normalize(Normal);
+    vec3 norm;
+    if (useNormalMap) {
+        // 1. 采样法线贴图 (注意应用 uvScale)
+        // 使用 material.texture_normal1
+        vec3 normalMapValue = texture(material.texture_normal1, TexCoords * uvScale).rgb;
+        // 2. 从 [0,1] 映射到 [-1,1]
+        normalMapValue = normalMapValue * 2.0 - 1.0;
+        // 3. 应用 TBN 矩阵转换到世界空间
+        norm = normalize(TBN * normalMapValue);
+    } else {
+        // 如果没有法线贴图，使用几何法线
+        norm = normalize(Normal);
+    }
+
     vec3 lightDir = normalize(pointLight.position - FragPos);
     vec3 viewDir = normalize(viewPos - FragPos);
 
     // 获取物体本来的纹理颜色
-    vec3 objectColor = texture(material.texture_diffuse1, TexCoords).rgb;
+    vec3 objectColor = texture(material.texture_diffuse1, TexCoords * uvScale).rgb;
     // 透明度测试
     // 如果这个像素太透明了（Alpha < 0.1），直接扔掉，不要写入颜色缓冲，也不要写入深度缓冲
     if(texture(material.texture_diffuse1, TexCoords).a < 0.1)

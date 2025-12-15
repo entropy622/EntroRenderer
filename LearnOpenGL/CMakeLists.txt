@@ -57,6 +57,43 @@ include_directories(${CMAKE_SOURCE_DIR}/include) # 你的 glad 头文件位置
 include_directories(${glm_SOURCE_DIR})           # GLM 头文件位置
 
 # ==========================================
+# 配置 Dear ImGui
+# ==========================================
+
+# 1. 设置 ImGui 的路径变量 (根据你的实际目录修改这里!)
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/include/imgui)
+
+# 2. 收集 ImGui 的源文件 (核心 + 后端)
+# 注意：ImGui 不是只有头文件，必须编译这些 .cpp
+set(IMGUI_SOURCES
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_demo.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        # GLFW 后端
+        ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+        # OpenGL3 后端
+        ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+
+# 3. 创建 ImGui 静态库
+# 这样 CMake 会把它编译成 imgui.lib (或 .a)，而不是混在你的 main.exe 里
+add_library(imgui STATIC ${IMGUI_SOURCES})
+
+# 4. 设置头文件包含路径
+# PUBLIC 意味着：链接了 imgui 的目标（你的 main.exe）也能自动找到这些头文件
+target_include_directories(imgui PUBLIC
+        ${IMGUI_DIR}
+        ${IMGUI_DIR}/backends
+)
+
+# 5. 链接依赖
+# ImGui 的后端文件里用到了 GLFW 和 OpenGL 函数，所以它必须链接它们
+# 假设你的 GLFW 库叫 'glfw' 或 'glfw3'
+target_link_libraries(imgui PRIVATE glfw)
+
+# ==========================================
 # 4. 优化：把 GLAD 编译成静态库
 # ==========================================
 # 这样就不用在每个 main 里都把 glad.c 编译一遍了，只编译一次，大家一起用
@@ -108,8 +145,7 @@ foreach(ONE_SOURCE_FILE ${MAIN_SOURCES})
 
     # 链接我们刚才创建的 MyCore 库
     # 这样 main_xxx 就能用 MyCore 里的 Mesh 和 Model 类了
-    target_link_libraries(${EXE_NAME} PRIVATE MyCore)
-
+    target_link_libraries(${EXE_NAME} PRIVATE MyCore imgui)
     if(WIN32)
         add_custom_command(TARGET ${EXE_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different

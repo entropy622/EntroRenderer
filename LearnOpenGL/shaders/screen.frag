@@ -3,13 +3,30 @@ out vec4 FragColor;
 in vec2 TexCoords;
 
 uniform sampler2D screenTexture;
+uniform float exposure;
 
 // 纹理偏移量 (对应 3x3 矩阵的 9 个位置)
 const float offset = 1.0 / 300.0;  // 步长：越小越精细，越大越夸张
 
 
 void main(){
-    FragColor = texture(screenTexture, TexCoords);
+    vec3 hdrColor = texture(screenTexture, TexCoords).rgb;
+
+    // 2. 色调映射 (Tone Mapping)
+    // 方法 A: Reinhard 色调映射 (最简单，均匀压暗)
+    // vec3 mapped = hdrColor / (hdrColor + vec3(1.0));
+
+    // 方法 B: 曝光色调映射 (Exposure Tone Mapping) - 推荐！
+    // 允许我们在亮处和暗处之间做调整，类似相机的曝光
+    // exposure 默认设为 1.0，越大画面越亮，越小画面越暗
+    vec3 mapped = vec3(1.0) - exp(-hdrColor * exposure);
+
+    // 3. 伽马校正 (Gamma Correction)
+    // 这一步也是必须的，之前可能已经在 C++ 开启了 GL_FRAMEBUFFER_SRGB，
+    // 但既然我们自己在做后处理，最好手动控制 Gamma
+    mapped = pow(mapped, vec3(1.0 / 2.2));
+
+    FragColor = vec4(mapped, 1.0);
 }
 //void main()
 //{

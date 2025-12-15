@@ -7,38 +7,50 @@
 
 class RenderObject {
 public:
-    // 【改进 1】使用指针！
-    // 这样 100 个物体可以共用同一个 Model 实例，省内存
     Model* model; 
-    
-    // 【改进 2】增加手动纹理支持
-    // 如果模型自带纹理，这个设为 0；如果是白模，这里填 loadTexture 返回的 ID
-    unsigned int textureID; 
+
+    // 如果模型自带纹理，这个设为 0；
+    unsigned int textureID;
+    unsigned int normalMapID;
 
     // 变换属性
     glm::vec3 position;
     glm::vec3 rotation;
     glm::vec3 scale;
+    glm::vec2 uvScale;
 
     // 构造函数
     // 传入已经加载好的 Model 指针，而不是路径
-    RenderObject(Model* modelPtr, unsigned int texID = 0) 
-        : model(modelPtr), textureID(texID) 
+    RenderObject(Model* modelPtr, unsigned int texID = 0, unsigned int normalMapID = 0)
+        : model(modelPtr), textureID(texID), normalMapID(normalMapID)
     {
         // 初始化默认值
         position = glm::vec3(0.0f);
         rotation = glm::vec3(0.0f);
         scale    = glm::vec3(1.0f); // ⚠️ 默认缩放必须是 1，否则看不见！
+        uvScale  = glm::vec2(1.0f);
     }
 
     // 【改进 3】Shader 作为参数传入
     // 这样你可以用同一个 Shader 画不同的物体（批处理思想）
     void Draw(Shader& shader) {
         // 1. 如果有手动设置的纹理，先绑定
+        shader.use();
         if (textureID != 0) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, textureID);
-            // shader.setInt("material.diffuse", 0); // 确保 Shader 读取 0 号位
+            shader.setInt("material.texture_diffuse1", 0);
+        }
+        if (normalMapID != 0) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, normalMapID);
+
+            shader.setInt("material.texture_normal1", 1);
+
+            // 启用法线贴图开关
+            shader.setBool("useNormalMap", true);
+        } else {
+            shader.setBool("useNormalMap", false);
         }
 
         // 2. 计算矩阵
@@ -51,7 +63,7 @@ public:
         modelMat = glm::scale(modelMat, scale);
 
         // 3. 设置 Uniform
-        shader.use();
+        shader.setVec2("uvScale", uvScale);
         shader.setMat4("model", modelMat);
 
         // 4. 绘制

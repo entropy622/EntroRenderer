@@ -4,7 +4,6 @@
 #include <vector>
 
 #include "shader.h"
-#include "mesh.h"
 #include "camera.h"
 
 #include <glm/glm.hpp>
@@ -16,6 +15,12 @@
 #include "UBO.h"
 #include "pointLightData.h"
 #include "renderObject.h"
+#include "texture.h"
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+
+#include "Gui.h"
 
 using namespace std;
 
@@ -23,12 +28,12 @@ const int SCR_WIDTH = 1600;
 const int SCR_HEIGHT = 1200;
 
 // 摄像机
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(glm::vec3(0.0f, 2.0f, 3.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048; // 阴影贴图分辨率，越高锯齿越少
 bool firstMouse = true; // 用于解决第一次进入窗口时的跳变问题
-
+bool isCursorVisible = false; // 用于控制鼠标状态
 // 时间控制
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
@@ -45,17 +50,26 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 }
 void initShadowMap(unsigned int& depthMapFBO, unsigned int& depthMap);
 
-glm::vec3 pointLightPositions[] = {
+glm::vec3 lightPoses[] = {
     glm::vec3( 0.7f,  0.2f,  2.0f),
     glm::vec3( 2.3f, -3.3f, -4.0f),
     glm::vec3(-4.0f,  2.0f, -12.0f),
     glm::vec3( 0.0f,  0.0f, -3.0f)
 };
-glm::vec3 lightPos(-2.0f, 1.0f, -1.0f);
+float exposure = 1.0f;
+PointLightData lightData = {
+    glm::vec4(-2.0f, 5.0f, -1.0f, 0.0f), // position
+    glm::vec4(0.3f, 0.3f, 0.3f, 0.0f), // ambient
+    glm::vec4(glm::vec3(1.0f), 0.0f), // diffuse
+    glm::vec4(glm::vec3(1.0f), 0.0f), // specular
+    1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
+};
 
 int main() {
     GLFWwindow* window = initWindow();
+
     if (!window) return -1;
+    Gui gui = Gui(window);
 
     // 注册回调函数
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -66,6 +80,9 @@ int main() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // --- 4. 资源加载 ---
+    Texture wallTex = Texture("textures/wall.jpg");
+    Texture brickWallTex = Texture("textures/brickwall.jpg");
+    Texture brickWallNormalTex = Texture("textures/brickwall_normal.jpg");
     Shader shader("shaders/shader.vert", "shaders/toon_shader.frag");
     Shader outlineShader("shaders/outline.vert", "shaders/outline.frag");
     Shader screenShader("shaders/screen.vert", "shaders/screen.frag");
@@ -98,10 +115,12 @@ int main() {
     RenderObject tianyi(&ourModel);
     RenderObject light(&cubeModel);
     RenderObject sphere(&sphereModel);
-    RenderObject floor(&floorModel);
+    RenderObject floor(&floorModel,brickWallTex.ID,brickWallNormalTex.ID);
+    floor.scale = glm::vec3(10.0f, 1.0f, 10.0f);
+    floor.uvScale = glm::vec2(20.0f);
 
-    tianyi.scale = glm::vec3(0.1f);
-    light.position = lightPos;
+    tianyi.scale = glm::vec3(0.2f);
+    light.position = lightData.position;
 
     UBO matricesUBO(2 * sizeof(glm::mat4), 0);
     UBO lightUBO(sizeof(PointLightData), 1);
@@ -123,6 +142,7 @@ int main() {
     while (!glfwWindowShouldClose(window))
     {
         glEnable(GL_DEPTH_TEST);
+        gui.BeginFrame();
 
         // 时间
         float currentFrame = static_cast<float>(glfwGetTime());
@@ -143,13 +163,6 @@ int main() {
         // 配置UBO
         matricesUBO.SetMat4(0, projection);
         matricesUBO.SetMat4(sizeof(glm::mat4), view);
-        PointLightData lightData = {
-            glm::vec4(lightPos, 0.0f), // position
-            glm::vec4(0.3f, 0.3f, 0.3f, 0.0f), // ambient
-            glm::vec4(0.8f, 0.8f, 0.8f, 0.0f), // diffuse
-            glm::vec4(1.0f, 1.0f, 1.0f, 0.0f), // specular
-            1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
-        };
         lightUBO.SetData(0, sizeof(PointLightData), &lightData);
 
         // 清屏
@@ -160,11 +173,11 @@ int main() {
         // 阴影帧
         // ====================================================
         // 2. 正交投影 (覆盖场景范围)
-        float near_plane = 1.0f, far_plane = 5.5f;
+        float near_plane = 0.1f, far_plane = 10.5f;
         // 这里的数值决定了阴影覆盖的范围，太小会导致远处没阴影，太大导致精度低
         glm::mat4 lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
         // 3. View 矩阵 (从光的位置看向原点)
-        glm::mat4 lightView = glm::lookAt(lightPos, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+        glm::mat4 lightView = glm::lookAt(glm::vec3(lightData.position), glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
         // 4. 合成光照空间矩阵
         glm::mat4 lightSpaceMatrix = lightProjection * lightView;
         // 步骤 1: 渲染阴影贴图 (Shadow Map Pass)
@@ -182,7 +195,8 @@ int main() {
         // 渲染阴影贴图时，我们通常剔除正面 (只画背面)，或者不剔除。
         // 对于 Toon Shading，先试试不剔除
         glDisable(GL_CULL_FACE);
-        ourModel.Draw(simpleDepthShader);
+        tianyi.Draw(simpleDepthShader);
+        floor.Draw(simpleDepthShader);
 
         // ==============================================
         // 第 1 遍 (Pass 1): 渲染描边
@@ -216,19 +230,14 @@ int main() {
         // ------------------------------------------------
         // 绘制反射箱子
         // ------------------------------------------------
-        // reflectionShader.use();
-        // glm::mat4 modelCube = glm::mat4(1.0f);
-        // modelCube = glm::translate(modelCube, glm::vec3(-2.0f, 1.0f, 0.0f)); // 放在角色左手边
-        // modelCube = glm::scale(modelCube, glm::vec3(0.5f));
-        //
-        // reflectionShader.setMat4("model", modelCube);
         // reflectionShader.setVec3("cameraPos", camera.Position);
-        // ourModel.Draw(reflectionShader);
+        // ourModel.DrawAt(glm::vec3(-2.0f, 1.0f, 0.0f),reflectionShader);
 
         // ==============================================
         // 天空盒  光源  地板
         // ==============================================
         skybox.Draw(skyboxShader, view, projection);
+        light.position = lightData.position;
         light.Draw(lightCubeShader);
         floor.Draw(shader);
 
@@ -240,13 +249,21 @@ int main() {
         glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         screenShader.use();
+        screenShader.setFloat("exposure", 1.0f);
         // glBindTexture(GL_TEXTURE_2D, depthMap);
         glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
         screenQuad.Draw();
 
+        if (isCursorVisible) { // 只有鼠标显示的时候才画 UI，或者一直画
+            gui.DrawPanel(lightData,exposure);
+        }
+        gui.EndFrame();
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
     glfwTerminate();
     return 0;
 }
@@ -257,16 +274,36 @@ void processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    // 只需要这一行就能动了！
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        camera.ProcessKeyboard(RIGHT, deltaTime);
+    // 【新增】按左 Alt 切换鼠标模式
+    static bool altPressedLastFrame = false;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS) {
+        if (!altPressedLastFrame) {
+            isCursorVisible = !isCursorVisible;
+            if (isCursorVisible) {
+                // 显示鼠标，停止摄像机转动
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            } else {
+                // 隐藏鼠标，启用摄像机转动
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                firstMouse = true; // 防止视角跳变
+            }
+        }
+        altPressedLastFrame = true;
+    } else {
+        altPressedLastFrame = false;
+    }
 
+    if (!isCursorVisible) {
+        // 只需要这一行就能动了！
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            camera.ProcessKeyboard(RIGHT, deltaTime);
+    }
 
     // ==============================================
     // 光源控制逻辑
@@ -275,26 +312,29 @@ void processInput(GLFWwindow *window)
 
     // X轴移动 (左/右)
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        lightPos.x -= lightSpeed;
+        lightData.position.x -= lightSpeed;
     if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        lightPos.x += lightSpeed;
+        lightData.position.x += lightSpeed;
 
     // Z轴移动 (上/下)
     if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-        lightPos.z -= lightSpeed;
+        lightData.position.z -= lightSpeed;
     if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-        lightPos.z += lightSpeed;
+        lightData.position.z += lightSpeed;
 
     // Y轴移动 (垂直升降) - 使用 Right Shift 和 Right Control
     if (glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS)
-        lightPos.y += lightSpeed;
+        lightData.position.y += lightSpeed;
     if (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS)
-        lightPos.y -= lightSpeed;
+        lightData.position.y -= lightSpeed;
 }
 
 // --- 鼠标移动回调 ---
 void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
 {
+    // 如果鼠标可见（在调参数），就不要旋转摄像机
+    if (isCursorVisible) return;
+
     float xpos = static_cast<float>(xposIn);
     float ypos = static_cast<float>(yposIn);
 
@@ -317,6 +357,8 @@ void mouse_callback(GLFWwindow* window, double xposIn, double yposIn)
 // --- 鼠标滚轮回调 ---
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
+    // 如果鼠标可见，也别缩放
+    if (isCursorVisible) return;
     camera.ProcessMouseScroll(static_cast<float>(yoffset));
 }
 
@@ -354,8 +396,7 @@ void configFrameBuffer(unsigned int &framebuffer, unsigned int &textureColorBuff
 
     glGenTextures(1, &textureColorBuffer);
     glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorBuffer, 0);
 

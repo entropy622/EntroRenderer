@@ -32,7 +32,6 @@ public:
 
         // 加载图片数据
         // --------------------------------------------------------------------
-        stbi_set_flip_vertically_on_load(true); // 【重要】反转Y轴，适配OpenGL
         unsigned char* data = stbi_load(path, &width, &height, &nrChannels, 0);
 
         if (data) {

@@ -1,5 +1,6 @@
 #version 420 core
-out vec4 FragColor;
+layout (location = 0) out vec4 FragColor;    // 输出到 colorBuffers[0]
+layout (location = 1) out vec4 BrightColor;  // 输出到 colorBuffers[1]
 
 // 保持和 C++ 代码一致的结构体定义
 struct Material {
@@ -150,5 +151,13 @@ void main()
 
     // 合并结果
     vec3 result = finalAmbient + finalDiffuse + finalSpecular;
+
     FragColor = vec4(result, 1.0);
+    float brightness = dot(result, vec3(0.2126, 0.7152, 0.0722));
+
+    // 阈值设为 1.0 (超过 1.0 的才发光)
+    if(brightness > 1.0)
+    BrightColor = vec4(result, 1.0);
+    else
+    BrightColor = vec4(0.0, 0.0, 0.0, 1.0); // 暗的地方存黑色
 }

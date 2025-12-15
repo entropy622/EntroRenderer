@@ -21,6 +21,7 @@
 #include "imgui_impl_opengl3.h"
 
 #include "Gui.h"
+#include "postProcessingData.h"
 
 using namespace std;
 
@@ -44,7 +45,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos); // 【新】�
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset); // 【新】滚轮回调
 void processInput(GLFWwindow *window);
 GLFWwindow* initWindow();
-void configFrameBuffer(unsigned int &framebuffer, unsigned int &textureColorBuffer);
+void configFrameBuffer(unsigned int &framebuffer, unsigned int* colorBuffers);
 void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
@@ -56,12 +57,17 @@ glm::vec3 lightPoses[] = {
     glm::vec3(-4.0f,  2.0f, -12.0f),
     glm::vec3( 0.0f,  0.0f, -3.0f)
 };
-float exposure = 1.0f;
+PostProcessingData postProcessingData = {
+    0.7f,
+    10,
+    2.2,
+    0.4f
+};
 PointLightData lightData = {
     glm::vec4(-2.0f, 5.0f, -1.0f, 0.0f), // position
     glm::vec4(0.3f, 0.3f, 0.3f, 0.0f), // ambient
-    glm::vec4(glm::vec3(1.0f), 0.0f), // diffuse
-    glm::vec4(glm::vec3(1.0f), 0.0f), // specular
+    glm::vec4(glm::vec3(1.2f), 0.0f), // diffuse
+    glm::vec4(glm::vec3(2.0f), 0.0f), // specular
     1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
 };
 
@@ -88,6 +94,7 @@ int main() {
     Shader lightCubeShader("shaders/light_cube.vert", "shaders/light_cube.frag");
     Shader skyboxShader("shaders/skybox.vert", "shaders/skybox.frag");
     Shader simpleDepthShader("shaders/simpleDepthShader.vert", "shaders/simpleDepthShader.frag");
+    Shader blurShader("shaders/blur.vert", "shaders/blur.frag");
     //天空盒
     vector<string> faces = {
         "textures/skybox/right.jpg",
@@ -108,10 +115,12 @@ int main() {
 
     // 6. 【核心步骤】加载模型
     Model ourModel("objects/TDA/TDA.pmx");
+    Model YYBModel("objects/YYB/YYB Hatsune Miku_10th_v1.02.pmx");
     Model cubeModel("objects/cube.obj");
     Model sphereModel("objects/sphere.obj");
     Model floorModel("objects/floor.obj");
     RenderObject tianyi(&ourModel);
+    RenderObject YYB(&YYBModel);
     RenderObject light(&cubeModel);
     RenderObject sphere(&sphereModel);
     RenderObject floor(&floorModel,brickWallTex.ID,brickWallNormalTex.ID);
@@ -120,17 +129,39 @@ int main() {
 
     tianyi.scale = glm::vec3(0.2f);
     light.position = lightData.position;
+    YYB.scale = glm::vec3(0.2f);
+    YYB.position = glm::vec3(3.0f, 0.0f, 0.0f);
 
     UBO matricesUBO(2 * sizeof(glm::mat4), 0);
     UBO lightUBO(sizeof(PointLightData), 1);
 
     // 配置帧缓冲 (Framebuffer)
     unsigned int framebuffer;
-    unsigned int textureColorBuffer;
+    unsigned int colorBuffers[2];
     unsigned int depthMapFBO;
     unsigned int depthMap;
-    configFrameBuffer(framebuffer, textureColorBuffer);
+    configFrameBuffer(framebuffer, colorBuffers);
     initShadowMap(depthMapFBO, depthMap);
+    // --- Ping-Pong FBO 初始化 ---
+    unsigned int pingpongFBO[2];
+    unsigned int pingpongColorbuffers[2];
+    glGenFramebuffers(2, pingpongFBO);
+    glGenTextures(2, pingpongColorbuffers);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[i]);
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pingpongColorbuffers[i], 0);
+
+        // 检查完整性...
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            cout << "PingPong FBO not complete!" << endl;
+    }
 
     // 开启混合
     glEnable(GL_BLEND);
@@ -212,6 +243,7 @@ int main() {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_FRONT);
         tianyi.Draw(outlineShader);
+        YYB.Draw(outlineShader);
 
         // ==============================================
         // 第 2 遍 (Pass 2): 正常渲染 Toon 模型
@@ -225,6 +257,7 @@ int main() {
         glActiveTexture(GL_TEXTURE10);
         glBindTexture(GL_TEXTURE_2D, depthMap);
         tianyi.Draw(shader);
+        YYB.Draw(shader);
 
         // ------------------------------------------------
         // 绘制反射箱子
@@ -243,18 +276,42 @@ int main() {
         // ==============================================
         // 后处理
         // ==============================================
+        // ... 高斯模糊处理 ...
+        bool horizontal = true, first_iteration = true;
+        blurShader.use();
+
+        for (unsigned int i = 0; i < postProcessingData.amount; i++)
+        {
+            // 绑定当前要写入的 FBO (0 或 1)
+            glBindFramebuffer(GL_FRAMEBUFFER, pingpongFBO[horizontal]);
+            blurShader.setInt("horizontal", horizontal);
+
+            // 第一次循环读 colorBuffers[1] (提取出的高亮)，之后读对方的 pingpongBuffer
+            glBindTexture(GL_TEXTURE_2D, first_iteration ? colorBuffers[1] : pingpongColorbuffers[!horizontal]);
+
+            screenQuad.Draw(); // 画个四边形进行模糊计算
+
+            horizontal = !horizontal; // 切换方向
+            if (first_iteration) first_iteration = false;
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glDisable(GL_DEPTH_TEST);
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // 清屏
+
         screenShader.use();
-        screenShader.setFloat("exposure", exposure);
-        // glBindTexture(GL_TEXTURE_2D, depthMap);
-        glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, colorBuffers[0]); // 场景原图
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, pingpongColorbuffers[!horizontal]); // 模糊后的光晕图 (取最后一次写入的那个)
+
+        screenShader.setInt("scene", 0);
+        screenShader.setInt("bloomBlur", 1);
+        screenShader.setFloat("exposure", postProcessingData.exposure);
+        screenShader.setFloat("gamma", postProcessingData.gamma);
+
         screenQuad.Draw();
 
         if (isCursorVisible) { // 只有鼠标显示的时候才画 UI，或者一直画
-            gui.DrawPanel(lightData,exposure);
+            gui.DrawPanel(lightData,postProcessingData);
         }
         gui.EndFrame();
         glfwSwapBuffers(window);
@@ -292,17 +349,15 @@ void processInput(GLFWwindow *window)
         altPressedLastFrame = false;
     }
 
-    if (!isCursorVisible) {
-        // 只需要这一行就能动了！
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            camera.ProcessKeyboard(FORWARD, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            camera.ProcessKeyboard(BACKWARD, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            camera.ProcessKeyboard(LEFT, deltaTime);
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-            camera.ProcessKeyboard(RIGHT, deltaTime);
-    }
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        camera.ProcessKeyboard(FORWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        camera.ProcessKeyboard(BACKWARD, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        camera.ProcessKeyboard(LEFT, deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        camera.ProcessKeyboard(RIGHT, deltaTime);
+
 
     // ==============================================
     // 光源控制逻辑
@@ -386,32 +441,42 @@ GLFWwindow* initWindow() {
     return window;
 }
 
-void configFrameBuffer(unsigned int &framebuffer, unsigned int &textureColorBuffer) {
+// 修改函数签名，传入一个数组或者两个引用
+void configFrameBuffer(unsigned int &framebuffer, unsigned int* colorBuffers) {
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
 
-    // 1. 生成纹理附件 (Color Attachment Texture)
-    // 我们把画面渲染到这张纹理上，而不是直接渲染到屏幕
+    glGenTextures(2, colorBuffers); // 生成 2 个纹理
 
-    glGenTextures(1, &textureColorBuffer);
-    glBindTexture(GL_TEXTURE_2D, textureColorBuffer);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, textureColorBuffer, 0);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindTexture(GL_TEXTURE_2D, colorBuffers[i]);
+        // 必须用 GL_RGBA16F 浮点格式
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        // 防止模糊时边缘发光，设为 CLAMP_TO_EDGE
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // 2. 生成渲染缓冲对象 (Renderbuffer Object) 用于深度和模板
-    // 我们需要深度测试来正确渲染 3D 模型，所以必须加这个
+        // 把纹理附加到 Framebuffer
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, colorBuffers[i], 0);
+    }
+
+    // 2. 深度缓冲 (RBO) 保持不变
     unsigned int rbo;
     glGenRenderbuffers(1, &rbo);
     glBindRenderbuffer(GL_RENDERBUFFER, rbo);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, SCR_WIDTH, SCR_HEIGHT);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
 
-    // 3. 检查完整性
+    // 【核心】告诉 OpenGL 我们要渲染到这两个附件上
+    unsigned int attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, attachments);
+
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         cout << "ERROR::FRAMEBUFFER:: Framebuffer is not complete!" << endl;
 
-    // 解绑，切回默认帧缓冲 (避免意外渲染到 FBO)
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 };
 

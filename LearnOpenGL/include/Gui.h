@@ -7,6 +7,8 @@
 #include <glm/glm.hpp>
 #include <GLFW/glfw3.h> // 需要 GLFWwindow 定义
 
+#include "postProcessingData.h"
+
 class Gui {
 public:
     // 构造函数：初始化 ImGui
@@ -49,13 +51,16 @@ public:
 
     // 具体的面板绘制逻辑
     // 传入引用，这样我们就能直接修改 main.cpp 里的变量
-    void DrawPanel(PointLightData& lightData, float& exposure) {
+    void DrawPanel(PointLightData& lightData, PostProcessingData& postProcessingData) {
         ImGui::Begin("Scene Controls");
 
         ImGui::Text("Performance: %.1f FPS", ImGui::GetIO().Framerate);
 
         if (ImGui::CollapsingHeader("Post Processing", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::SliderFloat("Exposure", &exposure, 0.1f, 5.0f);
+            ImGui::SliderFloat("Exposure", &postProcessingData.exposure, 0.1f, 5.0f);
+            ImGui::SliderInt("Amount", &postProcessingData.amount, 1, 100);
+            ImGui::SliderFloat("gamma", &postProcessingData.gamma, 0.1f, 5.0f);
+            ImGui::SliderFloat("Bloom Strength", &postProcessingData.bloomStrength, 0.0f, 1.0f);
         }
 
         if (ImGui::CollapsingHeader("Light Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -67,9 +72,9 @@ public:
             // ImGui::ColorEdit3 需要 float* 指针，glm::vec4 的 .x 地址正好对应 r,g,b 连续内存
             ImGui::Separator();
             ImGui::Text("Colors");
-            ImGui::ColorEdit3("Ambient", &lightData.ambient.x);
-            ImGui::ColorEdit3("Diffuse", &lightData.diffuse.x);
-            ImGui::ColorEdit3("Specular", &lightData.specular.x);
+            ImGui::DragFloat3("Ambient", &lightData.ambient.x,0.1f);
+            ImGui::DragFloat3("Diffuse", &lightData.diffuse.x,0.1f);
+            ImGui::DragFloat3("Specular", &lightData.specular.x,0.1f);
 
             // 3. 衰减控制 (Attenuation)
             // linear 和 quadratic 通常是很小的小数，所以 step 要设得很小

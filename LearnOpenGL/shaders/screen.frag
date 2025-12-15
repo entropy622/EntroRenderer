@@ -2,57 +2,43 @@
 out vec4 FragColor;
 in vec2 TexCoords;
 
-uniform sampler2D screenTexture;
-uniform float exposure;
+uniform sampler2D scene;      // 原图
+uniform sampler2D bloomBlur;  // 泛光图
+uniform float exposure;       // 曝光度 (建议 0.5 ~ 2.0)
+uniform float gamma;          // 伽马 (通常 2.2)
+uniform float bloomStrength;  // 【新增】泛光强度 (建议 0.02 ~ 0.1)
 
-// 纹理偏移量 (对应 3x3 矩阵的 9 个位置)
-const float offset = 1.0 / 300.0;  // 步长：越小越精细，越大越夸张
-
-
-void main(){
-    const float gamma = 2.2;
-    vec3 hdrColor = texture(screenTexture, TexCoords).rgb;
-
-    // 曝光色调映射
-    vec3 mapped = vec3(1.0) - exp(-hdrColor * exposure);
-    // Gamma校正
-    mapped = pow(mapped, vec3(1.0 / gamma));
-
-    FragColor = vec4(hdrColor, 1.0);
+// ========================================================
+// ACES 拟合公式 (Narkowicz版本)
+// 这是目前游戏业界最常用的 Tone Mapping 算法之一
+// ========================================================
+vec3 ACESFilm(vec3 x)
+{
+    float a = 2.51f;
+    float b = 0.03f;
+    float c = 2.43f;
+    float d = 0.59f;
+    float e = 0.14f;
+    return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
 }
-//void main()
-//{
-//    // 1. 定义 9 个采样坐标（左上、上、右上、左、中、右...）
-//    vec2 offsets[9] = vec2[](
-//    vec2(-offset,  offset), // 左上
-//    vec2( 0.0f,    offset), // 正上
-//    vec2( offset,  offset), // 右上
-//    vec2(-offset,  0.0f),   // 左
-//    vec2( 0.0f,    0.0f),   // 中
-//    vec2( offset,  0.0f),   // 右
-//    vec2(-offset, -offset), // 左下
-//    vec2( 0.0f,    -offset),// 正下
-//    vec2( offset, -offset)  // 右下
-//    );
-//
-//    // 2. 定义卷积核 (Sharpen Kernel)
-//    // 中间是 9，周围是 -1。意思是：极度强化中间像素，减去周围像素。
-//    float kernel[9] = float[](
-//    1,  1,  1,
-//    1, -8,  1,
-//    1,  1,  1
-//    );
-//
-//    // 3. 采样并累加
-//    vec3 sampleTex[9];
-//    for(int i = 0; i < 9; i++)
-//    {
-//        sampleTex[i] = vec3(texture(screenTexture, TexCoords.st + offsets[i]));
-//    }
-//
-//    vec3 col = vec3(0.0);
-//    for(int i = 0; i < 9; i++)
-//    col += sampleTex[i] * kernel[i];
-//
-//    FragColor = vec4(col, 1.0);
-//}
+
+void main()
+{
+    vec3 hdrColor = texture(scene, TexCoords).rgb;
+    vec3 bloomColor = texture(bloomBlur, TexCoords).rgb;
+
+    // 1. 混合 Bloom (增加控制权)
+    // 直接叠加会导致画面变亮变白，乘个系数压一压
+    hdrColor += bloomColor * bloomStrength;
+
+    // 2. 应用曝光
+    hdrColor *= exposure;
+
+    // 3. 色调映射 (Tone Mapping) - 使用 ACES 替代原来的 exp
+    vec3 result = ACESFilm(hdrColor);
+
+    // 4. 伽马校正
+    result = pow(result, vec3(1.0 / gamma));
+
+    FragColor = vec4(hdrColor.rgb, 1.0);
+}

@@ -7,4 +7,9 @@ WWASD鼠标移动，上下左右 LShift LCtrl快捷控制光源。
 
 如果对你有帮助，请随意参考。
 
-LearnOpenGL 地址：https://learnopengl-cn.github.io   真的是很好的教程。
+## 编译问题
+如果出现了确实dll的情况，可能需要把
+`cmake-build-debug/_deps/assimp-build/bin/libassimp-5d.dll` 复制到 `cmake-build-debug` 的根目录。不过一般来说Cmake会自动做这件事。 
+
+## LearnOpenGL 地址：
+https://learnopengl-cn.github.io   真的是很好的教程。

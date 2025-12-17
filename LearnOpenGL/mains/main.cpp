@@ -57,6 +57,12 @@ glm::vec3 lightPoses[] = {
     glm::vec3(-4.0f,  2.0f, -12.0f),
     glm::vec3( 0.0f,  0.0f, -3.0f)
 };
+glm::vec3 lightColors[] = {
+    glm::vec3(1.0f, 1.0f, 1.0f), // 白
+    glm::vec3(1.0f, 0.0f, 0.0f), // 红
+    glm::vec3(0.0f, 1.0f, 0.0f), // 绿
+    glm::vec3(0.0f, 0.0f, 1.0f)  // 蓝
+};
 PostProcessingData postProcessingData = {
     0.7f,
     10,
@@ -69,6 +75,10 @@ PointLightData lightData = {
     glm::vec4(glm::vec3(1.2f), 0.0f), // diffuse
     glm::vec4(glm::vec3(2.0f), 0.0f), // specular
     1.0f, 0.09f, 0.032f, 0.0f          // constant, linear, quadratic, padding
+};
+
+struct LightBlockData {
+    PointLightData pointLights[4];
 };
 
 int main() {
@@ -88,7 +98,15 @@ int main() {
     Texture wallTex = Texture("textures/wall.jpg");
     Texture brickWallTex = Texture("textures/brickwall.jpg");
     Texture brickWallNormalTex = Texture("textures/brickwall_normal.jpg");
+
+    Texture whiteTex = Texture("textures/white.png");
+    Texture rustedIronBaseTex = Texture("textures/rustediron1-alt2-bl/rustediron2_basecolor.png");
+    Texture rustedIronNormalTex = Texture("textures/rustediron1-alt2-bl/rustediron2_normal.png");
+    Texture rustedIronMetalTex = Texture("textures/rustediron1-alt2-bl/rustediron2_metallic.png");
+    Texture rustedIronRoughTex = Texture("textures/rustediron1-alt2-bl/rustediron2_roughness.png");
+
     Shader shader("shaders/shader.vert", "shaders/toon_shader.frag");
+    Shader pbrShader("shaders/shader.vert", "shaders/pbr_shader.frag");
     Shader outlineShader("shaders/outline.vert", "shaders/outline.frag");
     Shader screenShader("shaders/screen.vert", "shaders/screen.frag");
     Shader lightCubeShader("shaders/light_cube.vert", "shaders/light_cube.frag");
@@ -133,7 +151,7 @@ int main() {
     YYB.position = glm::vec3(3.0f, 0.0f, 0.0f);
 
     UBO matricesUBO(2 * sizeof(glm::mat4), 0);
-    UBO lightUBO(sizeof(PointLightData), 1);
+    UBO lightUBO(sizeof(LightBlockData), 1);
 
     // 配置帧缓冲 (Framebuffer)
     unsigned int framebuffer;
@@ -193,8 +211,23 @@ int main() {
         // 配置UBO
         matricesUBO.SetMat4(0, projection);
         matricesUBO.SetMat4(sizeof(glm::mat4), view);
-        lightUBO.SetData(0, sizeof(PointLightData), &lightData);
 
+        LightBlockData allLightsData{};
+        allLightsData.pointLights[0] = lightData; // 你的 lightData 变量应该改为 PointLightData 类型
+
+        // 填充后 3 个光源 (固定位置光源)
+        for(int i = 1; i < 4; i++)
+        {
+            allLightsData.pointLights[i].position  = glm::vec4(lightPoses[i], 0.0f);
+            allLightsData.pointLights[i].ambient   = glm::vec4(lightColors[i] * 0.1f, 0.0f);
+            allLightsData.pointLights[i].diffuse   = glm::vec4(lightColors[i], 0.0f);
+            allLightsData.pointLights[i].specular  = glm::vec4(lightColors[i], 0.0f);
+            allLightsData.pointLights[i].constant  = 1.0f;
+            allLightsData.pointLights[i].linear    = 0.09f;
+            allLightsData.pointLights[i].quadratic = 0.032f;
+            allLightsData.pointLights[i].padding  = 0.0f;
+        }
+        lightUBO.SetData(0, sizeof(LightBlockData), &allLightsData);
         // 清屏
         glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -265,12 +298,47 @@ int main() {
         // reflectionShader.setVec3("cameraPos", camera.Position);
         // ourModel.DrawAt(glm::vec3(-2.0f, 1.0f, 0.0f),reflectionShader);
 
+        // ------------------------------------------------
+        // pbr
+        // ------------------------------------------------
+        pbrShader.setVec3("viewPos", camera.Position);
+
+        // --- 1. Albedo (Diffsue) ---
+        rustedIronBaseTex.bind(0);
+        pbrShader.setInt("material.texture_diffuse1", 0);
+        // --- 2. Normal ---
+        rustedIronNormalTex.bind(1);
+        pbrShader.setInt("material.texture_normal1", 1);
+        pbrShader.setBool("useNormalMap", true);
+        // --- 3. Metallic ---
+        rustedIronMetalTex.bind(2);   // 建议给 Texture 类加 bind 方法统一调用
+        pbrShader.setInt("metallicMap", 2);
+        // --- 4. Roughness ---
+        rustedIronRoughTex.bind(3);
+        pbrShader.setInt("roughnessMap", 3);
+        // --- 5. AO (Ambient Occlusion) ---
+        // 使用白色纹理代替 AO，防止模型变黑
+        whiteTex.bind(4);
+        pbrShader.setInt("aoMap", 4);
+        // 4. 设置纹理缩放
+        // 假设球体比较小，不需要像地板那样重复纹理，设为 1.0
+        pbrShader.setVec2("uvScale", glm::vec2(1.0f));
+
+        sphere.position = glm::vec3(-3.0f, 1.0f, 0.0f);
+        sphere.scale = glm::vec3(1.0f);
+        sphere.Draw(pbrShader);
+
         // ==============================================
         // 天空盒  光源  地板
         // ==============================================
         skybox.Draw(skyboxShader, view, projection);
         light.position = lightData.position;
-        light.Draw(lightCubeShader);
+        lightCubeShader.use();
+        for(auto & pointLight : allLightsData.pointLights) {
+            light.position = pointLight.position; // 隐式转换 vec4 -> vec3 (取前3个分量)
+            lightCubeShader.setVec3("color", glm::vec3(pointLight.diffuse));
+            light.Draw(lightCubeShader);
+        }
         floor.Draw(shader);
 
         // ==============================================

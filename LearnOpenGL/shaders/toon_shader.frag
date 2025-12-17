@@ -31,7 +31,7 @@ struct PointLight {
 
 // 【绑定点 1】
 layout (std140, binding = 1) uniform LightBlock {
-    PointLight pointLight;
+    PointLight pointLights[4];
 };
 
 in vec3 FragPos;
@@ -48,7 +48,7 @@ layout(binding = 10) uniform sampler2D shadowMap;
 
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal)
 {
-    vec3 lightDir = normalize(pointLight.position - FragPos);
+    vec3 lightDir = normalize(pointLights[0].position - FragPos);
     // 1. 执行透视除法 (虽然正交投影下 w 是 1，但这步是标准流程)
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
@@ -100,7 +100,7 @@ void main()
         norm = normalize(Normal);
     }
 
-    vec3 lightDir = normalize(pointLight.position - FragPos);
+    vec3 lightDir = normalize(pointLights[0].position - FragPos);
     vec3 viewDir = normalize(viewPos - FragPos);
 
     // 获取物体本来的纹理颜色
@@ -128,7 +128,7 @@ void main()
     }
 
     // 计算最终漫反射颜色：光照颜色 * 卡通强度 * 物体纹理颜色
-    vec3 finalDiffuse = pointLight.diffuse * toonIntensity * objectColor;
+    vec3 finalDiffuse = pointLights[0].diffuse * toonIntensity * objectColor;
 
 
     // --- 2. 卡通高光 (Toon Specular) ---
@@ -141,12 +141,12 @@ void main()
     // 这模拟了动漫里头发或眼睛上那个锐利的小白点。
     float toonSpecIntensity = (specFactor > 0.9) ? 1.0 : 0.0;
 
-    vec3 finalSpecular = pointLight.specular * toonSpecIntensity;
+    vec3 finalSpecular = pointLights[0].specular * toonSpecIntensity;
     // MMD 的高光通常不需要乘物体颜色，就是纯白的光
 
     // --- 3. 环境光 (Ambient) ---
     // 环境光稍微给一点，防止阴影太死
-    vec3 finalAmbient = pointLight.ambient * objectColor * 0.5;
+    vec3 finalAmbient = pointLights[0].ambient * objectColor * 0.5;
 
 
     // 合并结果
